@@ -252,7 +252,8 @@
               getLandingPageData: () => sendToGoogle({ action: "getLandingPageData" }, onSuccess, onFailure),
               getCompoText: (id) => sendToGoogle({ action: "getCompoText", compoId: id }, onSuccess, onFailure),
               getGlossaryData: (id) => sendToGoogle({ action: "getGlossaryData", compoId: id }, onSuccess, onFailure),
-              saveRecord: (dataStr) => sendToGoogle({ action: "saveRecord", payload: dataStr }, onSuccess, onFailure)
+              saveRecord: (dataStr) => sendToGoogle({ action: "saveRecord", payload: dataStr }, onSuccess, onFailure),
+              getRubric: () => sendToGoogle({ action: "getRubric" }, onSuccess, onFailure)
           };
       }
 
@@ -269,6 +270,7 @@
               else if (data.action === "getCompoText") onSuccess(resData.text);
               else if (data.action === "getGlossaryData") onSuccess(resData.data);
               else if (data.action === "saveRecord") onSuccess(resData.status);
+              else if (data.action === "getRubric") onSuccess(resData.rubric);
               else onSuccess(resData);
           })
           .catch(err => {
@@ -281,6 +283,7 @@
       // 🎮 原本的游戏系统应用逻辑
       // ==========================================
       let gameData = {}; let currentCompoText = ""; let currentVocabList = []; let currentSkipTarget = "";
+      let rubricTiers = [];
       let currentPlayerName = ""; let currentSession = {};
       const REVIVE_THRESHOLD = 100; 
       const LOCK_MINUTES = 10;      
@@ -293,6 +296,7 @@
           new Set(gameData.compos.map(c => `${c.series} - ${c.level}`)).forEach(sl => document.getElementById('seriesLevelSelect').add(new Option(sl, sl)));
           document.getElementById('loading').style.display = 'none'; document.getElementById('loginForm').style.display = 'block';
         }).getLandingPageData(); 
+        google.script.run.withSuccessHandler(r => { rubricTiers = r || []; }).getRubric();
       };
       function toggleForm() {
         document.getElementById('compo-section').style.display = 'block';
@@ -423,6 +427,7 @@
         timeLeft = 180; timeUsed = 0; finalTranscript = ""; latestInterim = "";
         document.getElementById('live-transcript').innerHTML = "🗣️ Start speaking...";
         document.getElementById('timer-display').innerText = "03:00";
+        document.getElementById('timer-display').classList.remove('timer-danger');
         try { recognition.start(); } catch(e) {
           document.getElementById('live-transcript').innerHTML = "❌ Cannot start: " + e.message;
           return;
@@ -432,8 +437,10 @@
           timeLeft--; timeUsed++;
           let m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
           let s = (timeLeft % 60).toString().padStart(2, '0');
-          document.getElementById('timer-display').innerText = `${m}:${s}`;
-          if (timeLeft <= 0) finishReadingEarly();
+          const td = document.getElementById('timer-display');
+          td.innerText = `${m}:${s}`;
+          if (timeLeft <= 8 && timeLeft > 0) td.classList.add('timer-danger');   // 最后 8 秒闪红
+          if (timeLeft <= 0) { td.classList.remove('timer-danger'); finishReadingEarly(); }
         }, 1000);
       }
       function playAIReading() {
@@ -442,6 +449,9 @@
         btn.style.display = 'none'; document.getElementById('stopBtn').style.display = 'inline-block';
         utterance = new SpeechSynthesisUtterance(currentCompoText); 
         utterance.rate = 0.85; 
+        utterance.lang = 'en-US';
+        const usVoice = synth.getVoices().find(v => v.lang === 'en-US');
+        if (usVoice) utterance.voice = usVoice;
         utterance.onend = () => { btn.style.display = 'inline-block'; document.getElementById('stopBtn').style.display = 'none'; };
         synth.speak(utterance);
       }
@@ -482,6 +492,23 @@
         const wrongWords = origTokens.filter((t, k) => origClean[k] !== '' && !matched[k]).join(', ');
         return { score, correct, total, html, wrongWords };
       }
+      function gradeByRubric(accuracy, wpm) {
+        // rubricTiers 已按 minAcc 从高到低排序;最低一档视为"重读",其余过关
+        if (rubricTiers && rubricTiers.length) {
+          for (let i = 0; i < rubricTiers.length; i++) {
+            const t = rubricTiers[i];
+            // 同时看准确率和 WPM;若想让 WPM 只作参考、不卡过关,删掉 && wpm >= t.minWpm 即可
+            if (accuracy >= t.minAcc && wpm >= t.minWpm) {
+              return { tier: t.perf, feedback: t.feedback, canProceed: i < rubricTiers.length - 1 };
+            }
+          }
+          return { tier: "Keep Practicing 💪", feedback: "Focus on the red words, then read again.", canProceed: false };
+        }
+        // 后备:rubric 没加载到时退回 60 分及格,避免卡死
+        return { tier: accuracy >= 60 ? "Pass" : "Keep Practicing 💪",
+                 feedback: accuracy >= 60 ? "Well done!" : "Focus on the red words, then read again.",
+                 canProceed: accuracy >= 60 };
+      }
       function finishReadingEarly() {
         if (isRecording) { clearInterval(timerInterval); recognition.stop(); isRecording = false; }
         document.getElementById('recording-ui').style.display = 'none';
@@ -500,20 +527,18 @@
             return;
           }
           const r = scoreReading();
+          const minutes = Math.max(timeUsed, 1) / 60;
+          const wpm = Math.round(r.correct / minutes);   // 每分钟读对词数 (WCPM)
           currentSession.task1Score = r.score;
           currentSession.wrongWords = r.wrongWords || ""; 
           document.getElementById('compo-display').innerHTML = r.html;
-          let tier, color, feedback, canProceed;
-          if (r.score >= 90)      { tier="Excellent 🌟";        color="#00b894"; feedback="Almost perfect reading!"; canProceed=true; }
-          else if (r.score >= 75) { tier="Great 👍";            color="#00b894"; feedback="Well done! Just polish the red words."; canProceed=true; }
-          else if (r.score >= 60) { tier="Good 🙂";              color="#0984e3"; feedback="Nice try. Read the red words again to level up."; canProceed=true; }
-          else                    { tier="Keep Practicing 💪"; color="#d63031"; feedback="Focus on the red words, then read again."; canProceed=false; }
+          const g = gradeByRubric(r.score, wpm);
           document.getElementById('score-modal').style.display = 'flex';
-          document.getElementById('score-tier').style.color = color;
-          document.getElementById('score-tier').innerText = tier;
-          document.getElementById('score-stats').innerText = `Score: ${r.score}%  ·  ${r.correct}/${r.total} words correct`;
-          document.getElementById('score-feedback').innerText = feedback;
-          document.getElementById('next-task-btn').style.display = canProceed ? "inline-block" : "none";
+          document.getElementById('score-tier').style.color = g.canProceed ? "#00b894" : "#d63031";
+          document.getElementById('score-tier').innerText = g.tier;
+          document.getElementById('score-stats').innerText = `Accuracy: ${r.score}%  ·  ${r.correct}/${r.total} words  ·  ${wpm} WPM`;
+          document.getElementById('score-feedback').innerText = g.feedback;
+          document.getElementById('next-task-btn').style.display = g.canProceed ? "inline-block" : "none";
           document.getElementById('retry-task-btn').style.display = "inline-block";
         }, 700);
       }
@@ -522,6 +547,7 @@
         document.getElementById('compo-display').innerText = currentCompoText;
         document.getElementById('task1-subtitle').innerText = "Listen to the AI, or start reading!";
         document.getElementById('timer-display').style.display = 'block';
+        document.getElementById('timer-display').classList.remove('timer-danger');
         document.getElementById('submitBtn').innerText = "✅ Submit & Score";
         document.getElementById('playBtn').style.display = 'inline-block';
         document.getElementById('recordBtn').style.display = 'inline-block';
@@ -586,7 +612,9 @@
       function pronounceCurrentWord() {
         if (!currentVocabList || currentVocabList.length === 0) return;
         const word = currentVocabList[currentCardIndex].word;
-        const u = new SpeechSynthesisUtterance(word); u.rate = 0.8; synth.speak(u);
+        const u = new SpeechSynthesisUtterance(word); u.rate = 0.8; u.lang = 'en-US';
+        const uv = synth.getVoices().find(v => v.lang === 'en-US'); if (uv) u.voice = uv;
+        synth.speak(u);
       }
 
       // ==========================================
@@ -921,6 +949,7 @@
         }));
         for (let i=t4Questions.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [t4Questions[i],t4Questions[j]]=[t4Questions[j],t4Questions[i]]; }
         t4Index = 0; t4Correct = 0;
+        currentSession.task4Wrong = [];
         document.getElementById('t4-complete').style.display = 'none';
         document.getElementById('t4-question').style.display = 'block';
         document.getElementById('t4-options').style.display = 'block';
@@ -965,6 +994,9 @@
           btn.style.background = '#00b894'; t4Correct++; playSound('correct');
         } else {
           btn.style.background = '#d63031'; playSound('wrong');
+          const qWord = t4Questions[t4Index].word;
+          if (!currentSession.task4Wrong) currentSession.task4Wrong = [];
+          if (!currentSession.task4Wrong.includes(qWord)) currentSession.task4Wrong.push(qWord);
           Array.from(box.children).forEach(b => { if (b.innerText === correctAnswer) b.style.background = '#00b894'; });
         }
         setTimeout(() => {
