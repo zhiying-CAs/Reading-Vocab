@@ -43,17 +43,27 @@
       @keyframes timerDanger { 0%,100%{ color:#d63031; transform:scale(1.15); } 50%{ color:#ff9ff3; transform:scale(1); } }
       .timer-danger { animation: timerDanger 0.5s infinite !important; }
 
+      /* --- Confetti --- */
+      .confetti-piece { position: fixed; z-index: 9999; font-size: 24px; pointer-events: none; animation: confettiFall 2.5s ease-in forwards; }
+      @keyframes confettiFall { 0% { opacity:1; transform:translateY(0) rotate(0deg) scale(1); } 100% { opacity:0; transform:translateY(100vh) rotate(720deg) scale(0.3); } }
+
+      /* --- Task 3 Danger Flash --- */
+      @keyframes dangerFlash { 0%,100% { box-shadow: inset 0 0 60px rgba(255,0,0,0.5); } 50% { box-shadow: inset 0 0 10px rgba(255,0,0,0.1); } }
+      .danger-screen { animation: dangerFlash 0.6s infinite !important; }
+      .danger-screen .falling-item { animation: none !important; }
+
       /* --- Task 2 Flashcards --- */
-      .flashcard-container { perspective: 1000px; width: 100%; height: 220px; margin: 15px auto; }
+      .flashcard-container { perspective: 1000px; width: 100%; height: 280px; margin: 15px auto; }
       .flashcard { width: 100%; height: 100%; position: relative; transition: transform 0.6s; transform-style: preserve-3d; cursor: pointer; }
       .flashcard.is-flipped { transform: rotateY(180deg); }
-      .card-face { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); padding: 20px; box-sizing: border-box; }
+      .card-face { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); padding: 15px; box-sizing: border-box; }
       .card-front { background: linear-gradient(135deg, #74ebd5 0%, #9face6 100%); color: white; }
       .word-title { font-size: 28px; font-weight: bold; margin-bottom: 10px; }
-      .card-back { background: #fdfbfb; color: #333; transform: rotateY(180deg); border: 3px solid #9face6; overflow-y: auto; }
-      .word-def { font-size: 15px; margin-bottom: 8px; color: #2d3436; font-style: italic; }
-      .word-trans { font-size: 18px; font-weight: bold; color: #d63031; display: none; margin-top: 6px; }
-      .lang-btn { padding: 4px 10px; font-size: 11px; border: 1px solid #9face6; background: white; border-radius: 15px; cursor: pointer; margin: 2px; }
+      .card-back { background: #fdfbfb; color: #333; transform: rotateY(180deg); border: 3px solid #9face6; overflow-y: auto; justify-content: flex-start; padding-top: 18px; }
+      .word-def { font-size: 14px; margin-bottom: 4px; color: #2d3436; font-style: italic; text-align: center; }
+      .word-trans { font-size: 18px; font-weight: bold; color: #d63031; display: none; margin: 6px 0; text-align: center; }
+      .lang-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 100%; margin-top: auto; padding-top: 8px; }
+      .lang-btn { padding: 6px 4px; font-size: 11px; border: 1px solid #9face6; background: white; border-radius: 10px; cursor: pointer; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .lang-btn:hover { background: #dfe6e9; }
       .lang-btn.active { background: #6c5ce7; color: white; border-color: #6c5ce7; }
 
@@ -138,12 +148,12 @@
                 <button id="pronounce-btn" onclick="event.stopPropagation(); pronounceCurrentWord()" style="background:rgba(255,255,255,0.25); border:2px solid rgba(255,255,255,0.6); color:white; font-size:22px; cursor:pointer; border-radius:50%; width:44px; height:44px; line-height:44px; padding:0; margin-top:10px;">🔊</button>
               </div>
               <div class="card-face card-back">
-                <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
+                <div style="display:flex; align-items:center; justify-content:center; gap:8px; width:100%;">
                   <div class="word-def" id="card-def">Loading...</div>
-                  <button onclick="event.stopPropagation(); pronounceCurrentDef()" style="background:none; border:1px solid #9face6; font-size:18px; cursor:pointer; border-radius:50%; width:34px; height:34px; padding:0;">🔊</button>
+                  <button onclick="event.stopPropagation(); pronounceCurrentDef()" style="background:none; border:1px solid #9face6; font-size:16px; cursor:pointer; border-radius:50%; width:30px; height:30px; padding:0; flex-shrink:0;">🔊</button>
                 </div>
                 <div class="word-trans" id="card-trans-text"></div>
-                <div id="lang-buttons" style="display:flex; flex-wrap:wrap; gap:4px; justify-content:center; margin-top:8px;"></div>
+                <div id="lang-buttons" class="lang-grid"></div>
               </div>
             </div>
           </div>
@@ -549,6 +559,20 @@
       }
       return { tier: accuracy >= 60 ? "Pass" : "Keep Practicing", feedback: accuracy >= 60 ? "Well done!" : "Try again.", canProceed: accuracy >= 60 };
     }
+    function launchConfetti() {
+      const emojis = ['🎉','🎊','⭐','🌟','✨','🏆','💪','🔥'];
+      for (let i = 0; i < 30; i++) {
+        const el = document.createElement('div');
+        el.className = 'confetti-piece';
+        el.innerText = emojis[Math.floor(Math.random()*emojis.length)];
+        el.style.left = Math.random()*100 + 'vw';
+        el.style.top = -20 + 'px';
+        el.style.animationDelay = (Math.random()*1.2) + 's';
+        el.style.animationDuration = (2 + Math.random()*1.5) + 's';
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 4000);
+      }
+    }
     function finishReadingEarly() {
       if (isRecording) { clearInterval(timerInterval); recognition.stop(); isRecording = false; }
       document.getElementById('recording-ui').style.display = 'none';
@@ -572,6 +596,8 @@
         currentSession.readWrong = r.wrongWords || "";
         document.getElementById('compo-display').innerHTML = r.html;
         const g = gradeByRubric(r.score, wpm);
+        if (g.canProceed) { Music.init(); Music.playWin(); launchConfetti(); }
+        else { Music.init(); Music.playFailure(); }
         document.getElementById('score-modal').style.display = 'flex';
         document.getElementById('score-tier').style.color = g.canProceed ? "#00b894" : "#d63031";
         document.getElementById('score-tier').innerText = g.tier;
@@ -696,6 +722,7 @@
       document.getElementById('lives-display').innerText = "❤️❤️❤️❤️❤️";
       document.getElementById('game-timer').innerText = formatTime(gameSecondsLeft);
       document.getElementById('game-timer').classList.remove('timer-danger');
+      document.getElementById('game-area').classList.remove('danger-screen');
       document.getElementById('word-number-display').innerText = currentPlayWordIndex + 1;
 
       document.querySelectorAll('.falling-item').forEach(e => e.remove());
@@ -743,8 +770,15 @@
       gameTimer = setInterval(() => {
         gameSecondsLeft--;
         document.getElementById('game-timer').innerText = formatTime(gameSecondsLeft);
-        if (gameSecondsLeft <= 8 && gameSecondsLeft > 0) document.getElementById('game-timer').classList.add('timer-danger');
-        if (gameSecondsLeft <= 0) endGame(false, "Time's Up! ⏰");
+        if (gameSecondsLeft <= 8 && gameSecondsLeft > 0) {
+          document.getElementById('game-timer').classList.add('timer-danger');
+          document.getElementById('game-area').classList.add('danger-screen');
+          if (gameSecondsLeft === 8) { Music.stop(); Music.playCountdown(); }
+        }
+        if (gameSecondsLeft <= 0) {
+          document.getElementById('game-area').classList.remove('danger-screen');
+          endGame(false, "Time's Up! ⏰");
+        }
       }, 1000);
       gameInterval = setInterval(createFallingLetter, 600);
     }
@@ -806,6 +840,8 @@
     }
     function endGame(isWin, msg) {
       clearAllGameIntervals();
+      document.getElementById('game-area').classList.remove('danger-screen');
+      if (!isWin) Music.playFailure();
       setTimeout(() => {
         if (isWin) {
           alert(msg);
@@ -933,14 +969,15 @@
       document.getElementById('t4-progress').innerText = 'Question ' + (t4Index+1) + ' of ' + t4Questions.length;
       updateT4ReplayInfo();
 
-      // Build options: correct word + misspellings + other vocab
-      let options = [q.word];
-      let misspells = [...q.misspellings]; shuffleArr(misspells);
-      const numMis = Math.min(2, misspells.length);
-      for (let i = 0; i < numMis; i++) options.push(misspells[i]);
-      let otherWords = currentVocabList.map(v => v.word).filter(w => w !== q.word && !options.includes(w));
-      shuffleArr(otherWords);
-      while (options.length < 4 && otherWords.length > 0) options.push(otherWords.shift());
+      // Build options: correct word + 3 misspellings only
+      let misspells = q.misspellings ? [...q.misspellings] : [];
+      // Auto-generate misspellings if fewer than 3
+      if (misspells.length < 3) {
+        const auto = generateMisspellings(q.word);
+        auto.forEach(m => { if (!misspells.includes(m) && m !== q.word) misspells.push(m); });
+      }
+      shuffleArr(misspells);
+      let options = [q.word, ...misspells.slice(0, 3)];
       shuffleArr(options);
 
       const box = document.getElementById('t4-options');
@@ -955,6 +992,35 @@
 
       // Auto-play definition
       setTimeout(() => speakDef(q.def), 400);
+    }
+    function generateMisspellings(word) {
+      const results = [];
+      const w = word.toLowerCase();
+      // Swap two adjacent letters
+      if (w.length >= 3) {
+        const i = 1 + Math.floor(Math.random() * (w.length - 2));
+        results.push(w.slice(0,i) + w[i+1] + w[i] + w.slice(i+2));
+      }
+      // Double a random letter
+      if (w.length >= 4) {
+        const i = Math.floor(Math.random() * w.length);
+        results.push(w.slice(0,i) + w[i] + w.slice(i));
+      }
+      // Drop a random letter (not first)
+      if (w.length >= 5) {
+        const i = 1 + Math.floor(Math.random() * (w.length - 1));
+        results.push(w.slice(0,i) + w.slice(i+1));
+      }
+      // Replace a vowel with another
+      const vowels = 'aeiou';
+      for (let i = 0; i < w.length && results.length < 5; i++) {
+        if (vowels.includes(w[i])) {
+          const alt = vowels.replace(w[i], '').charAt(Math.floor(Math.random() * 4));
+          results.push(w.slice(0,i) + alt + w.slice(i+1));
+          break;
+        }
+      }
+      return [...new Set(results)].filter(r => r !== w);
     }
     function speakDef(text) {
       synth.cancel();
